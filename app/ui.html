@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Диагностика VAG</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171b21; --panel2:#1e242c; --line:#2a323c;
+    --text:#e6eaef; --dim:#9aa5b1; --accent:#4ade80; --accent2:#38bdf8;
+    --warn:#fbbf24; --bad:#f87171; --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.5}
+  header{display:flex;align-items:center;gap:16px;padding:14px 22px;
+         background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:10;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+  .badge{font-size:11px;color:var(--dim);border:1px solid var(--line);
+         padding:2px 8px;border-radius:20px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--bad);
+       display:inline-block;margin-right:7px}
+  .dot.on{background:var(--accent)}
+  main{max-width:1180px;margin:0 auto;padding:22px}
+  .tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+  .tab{padding:8px 16px;border-radius:var(--radius);cursor:pointer;
+       background:var(--panel);border:1px solid var(--line);color:var(--dim);
+       user-select:none}
+  .tab.active{background:var(--panel2);color:var(--text);border-color:#3b4653}
+  .card{background:var(--panel);border:1px solid var(--line);
+        border-radius:var(--radius);padding:18px;margin-bottom:16px}
+  .card h2{font-size:14px;margin:0 0 12px;font-weight:600}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
+  input,select{background:var(--panel2);border:1px solid var(--line);
+        color:var(--text);padding:8px 10px;border-radius:8px;font-size:14px;
+        font-family:inherit}
+  input:focus,select:focus{outline:1px solid var(--accent2)}
+  button{background:var(--accent2);color:#08222f;border:0;padding:9px 16px;
+         border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;
+         font-family:inherit}
+  button:hover{filter:brightness(1.1)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:var(--panel2);color:var(--text);
+               border:1px solid var(--line)}
+  button.danger{background:#7f1d1d;color:#fecaca}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:500;font-size:12px;text-transform:uppercase;
+     letter-spacing:.4px}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:"Cascadia Mono",Consolas,monospace}
+  .muted{color:var(--dim)}
+  .ok{color:var(--accent)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .bar{height:4px;background:var(--panel2);border-radius:4px;overflow:hidden;
+       margin-top:10px}
+  .bar > div{height:100%;background:var(--accent2);width:0;transition:width .3s}
+  .log{background:#0b0e12;border:1px solid var(--line);border-radius:8px;
+       padding:12px;height:190px;overflow:auto;font-size:12px;
+       font-family:"Cascadia Mono",Consolas,monospace;color:#c3cdd8}
+  .hint{background:#12202b;border-left:3px solid var(--accent2);
+        padding:11px 14px;border-radius:6px;font-size:13px;margin:12px 0}
+  .big{font-size:44px;font-weight:700;line-height:1.1}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+        gap:14px}
+  .stat{background:var(--panel2);border-radius:var(--radius);padding:16px}
+  .stat span{display:block;color:var(--dim);font-size:12px;margin-bottom:6px}
+  .hidden{display:none}
+  ol{margin:8px 0 0 0;padding-left:20px} ol li{margin-bottom:5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Диагностика VAG</h1>
+  <span class="badge" id="ver">версия —</span>
+  <span class="badge"><span class="dot" id="dot"></span><span id="connText">не подключено</span></span>
+  <span class="badge" id="adapterInfo"></span>
+  <span style="flex:1"></span>
+  <span class="muted" id="taskInfo"></span>
+  <select id="lang" style="padding:4px 8px;font-size:12px">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
+</header>
+
+<main>
+  <div class="tabs">
+    <div class="tab active" data-tab="conn">Подключение</div>
+    <div class="tab" data-tab="mods">Блоки</div>
+    <div class="tab" data-tab="obd">Двигатель</div>
+    <div class="tab" data-tab="live">Живые данные</div>
+    <div class="tab" data-tab="mon">Монитор</div>
+    <div class="tab" data-tab="wiz">Мастер поиска</div>
+    <div class="tab" data-tab="hist">Сравнение</div>
+    <div class="tab" data-tab="batt">Аккумулятор</div>
+    <div class="tab" data-tab="help">Как пользоваться</div>
+  </div>
+
+  <!-- ПОДКЛЮЧЕНИЕ -->
+  <section id="tab-conn">
+    <div class="card">
+      <h2>Адаптер</h2>
+      <div class="row">
+        <div><label>Тип адаптера</label>
+          <select id="kind">
+            <option value="wifi">ELM327 по Wi-Fi</option>
+            <option value="serial">ELM327 через COM-порт (USB, Bluetooth)</option>
+            <option value="slcan">USB-CAN, протокол SLCAN</option>
+          </select></div>
+        <div id="wifiFields"><label>Адрес и порт</label>
+          <input id="host" value="192.168.0.10" size="14">
+          <input id="port" value="35000" size="6"></div>
+        <div id="comFields" class="hidden"><label>Порт</label>
+          <select id="com" style="min-width:130px"></select>
+          <button class="ghost" id="btnPorts" style="padding:8px 10px">Обновить</button></div>
+        <div id="rateFields" class="hidden"><label>Скорость шины</label>
+          <select id="bitrate">
+            <option value="500">500 кбит/с</option>
+            <option value="100">100 кбит/с</option>
+            <option value="250">250 кбит/с</option>
+            <option value="125">125 кбит/с</option>
+          </select></div>
+        <div style="align-self:flex-end">
+          <button id="btnConnect">Подключиться</button>
+          <button class="ghost" id="btnDisconnect">Отключить</button>
+        </div>
+      </div>
+      <div class="hint" id="hintWifi">
+        Адаптер вставлен в разъём OBD, <b>зажигание включено, двигатель заглушен</b>,
+        компьютер подключён к сети Wi-Fi адаптера. Адрес по умолчанию подходит
+        большинству адаптеров; свой смотрите в свойствах подключения Wi-Fi
+        как «шлюз по умолчанию».
+      </div>
+      <div class="hint hidden" id="hintCom">
+        USB и Bluetooth адаптеры видны в системе как COM-порт. Для Bluetooth
+        сначала выполните сопряжение в настройках Windows — после этого
+        появится исходящий порт, его и выбирайте.
+      </div>
+      <div class="hint hidden" id="hintSlcan">
+        <b>Снимает главное ограничение.</b> Прошивка ELM327 дочитывает длинные
+        ответы только у двигателя, поэтому списки ошибок блоков кузова видны
+        не целиком. USB-CAN отдаёт сырые кадры шины, а сборку программа делает
+        сама — списки читаются полностью. Подходят CANable, CANtact
+        и совместимые. Для комфортной шины VAG выбирайте 500 кбит/с.
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="btnAdapterReset">Перезапустить адаптер</button>
+        <span class="muted">если адаптер перестал отвечать</span>
+      </div>
+      <div class="bar"><div id="bar1"></div></div>
+    </div>
+
+    <div class="card">
+      <h2>Полное сканирование одной кнопкой</h2>
+      <div class="row">
+        <button id="btnAuto">Просканировать автомобиль</button>
+        <span class="muted">поиск блоков, сбор данных, разбор ошибок, отчёт</span>
+      </div>
+      <div class="hint">
+        Занимает несколько минут. Подходит, когда непонятно, с чего начать:
+        программа сама обойдёт блоки, соберёт по ним данные, разберёт ошибки
+        у проблемных и сохранит готовый отчёт.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Журнал работы</h2>
+      <div class="log" id="log"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="btnReport">Отчёт текстом</button>
+        <button class="ghost" id="btnReportHtml">Отчёт страницей</button>
+        <span class="muted">REPORT_TO_SEND.txt и otchet.html рядом с программой</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- БЛОКИ -->
+  <section id="tab-mods" class="hidden">
+    <div class="card">
+      <h2>Поиск блоков</h2>
+      <div class="row">
+        <button id="btnScanFast">Быстрый поиск</button>
+        <button class="ghost" id="btnScanFull">Полный поиск</button>
+        <button class="ghost" id="btnBrief">Собрать данные по всем</button>
+      </div>
+      <div class="hint">
+        Быстрый поиск проверяет известные адреса блоков VAG и занимает
+        полминуты. Полный перебирает все 256 адресов — дольше, но найдёт
+        нестандартные блоки. Затем «Собрать данные» опрашивает каждый
+        найденный блок: имя, номер запчасти и количество ошибок.
+      </div>
+      <div class="bar"><div id="bar2"></div></div>
+    </div>
+
+    <div class="card">
+      <h2>Найденные блоки</h2>
+      <table>
+        <thead><tr>
+          <th>Адрес</th><th>Ответ с</th><th>Имя</th><th>Номер запчасти</th>
+          <th>Ошибок</th><th>Первый код</th><th></th>
+        </tr></thead>
+        <tbody id="modsBody">
+          <tr><td colspan="7" class="muted">Блоки не найдены. Запустите поиск.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card hidden" id="detailCard">
+      <h2>Разбор ошибок <span class="mono" id="detailId"></span></h2>
+      <table>
+        <thead><tr><th>Признак</th><th>Количество</th><th>Первый код</th></tr></thead>
+        <tbody id="detailBody"></tbody>
+      </table>
+      <div class="hint">
+        Количество берётся из заголовка ответа блока, поэтому показывается
+        даже когда список длинный. Дешёвые адаптеры ELM327 не умеют дочитывать
+        длинные ответы, и виден только первый код каждой выборки — этого
+        достаточно, чтобы понять характер неисправности.
+      </div>
+    </div>
+  </section>
+
+  <!-- ДВИГАТЕЛЬ -->
+  <section id="tab-obd" class="hidden">
+    <div class="card">
+      <h2>Диагностика двигателя по стандарту OBD-II</h2>
+      <div class="row">
+        <button id="btnObdRead">Прочитать</button>
+        <button class="danger" id="btnObdClear">Стереть коды и погасить лампу</button>
+      </div>
+      <div class="hint">
+        Этот раздел работает на любом автомобиле с 2001 года, не только VAG:
+        стандартные режимы обязательны по закону об выбросах. Читаются коды
+        двигателя, готовность систем самодиагностики, VIN и стоп-кадр.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="stat"><span>VIN</span>
+          <div class="mono" id="obdVin" style="font-size:16px;margin-top:8px">—</div></div>
+        <div class="stat"><span>Лампа неисправности</span>
+          <div class="big" id="obdMil" style="font-size:22px;margin-top:8px">—</div></div>
+        <div class="stat"><span>Кодов в памяти</span>
+          <div class="big" id="obdCount">—</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Коды неисправностей</h2>
+      <table>
+        <thead><tr><th>Категория</th><th>Коды</th><th>Что означает</th></tr></thead>
+        <tbody id="obdCodes">
+          <tr><td colspan="3" class="muted">Не читалось</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Готовность систем самодиагностики</h2>
+      <table>
+        <thead><tr><th>Система</th><th>Состояние</th></tr></thead>
+        <tbody id="obdReady">
+          <tr><td colspan="2" class="muted">Не читалось</td></tr>
+        </tbody>
+      </table>
+      <div class="hint">
+        Непройденные тесты завалят техосмотр, даже если ошибок нет.
+        После стирания кодов все тесты сбрасываются и требуют
+        нескольких десятков километров пробега в разных режимах.
+      </div>
+    </div>
+
+    <div class="card hidden" id="freezeCard">
+      <h2>Стоп-кадр — условия появления ошибки</h2>
+      <table><tbody id="obdFreeze"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ЖИВЫЕ ДАННЫЕ -->
+  <section id="tab-live" class="hidden">
+    <div class="card">
+      <h2>Живые параметры двигателя</h2>
+      <div class="row">
+        <button id="btnLiveStart">Запустить опрос</button>
+        <button class="ghost" id="btnLiveStop">Остановить</button>
+      </div>
+      <div class="hint">
+        Программа сама спросит у двигателя, какие параметры он отдаёт,
+        и будет опрашивать только их. Значения пишутся в файл live_log.csv
+        с метками времени — удобно потом сопоставить с поведением машины.
+      </div>
+    </div>
+    <div class="card">
+      <div class="grid" id="liveGrid">
+        <div class="stat"><span>Опрос не запущен</span><div class="big">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- МОНИТОР -->
+  <section id="tab-mon" class="hidden">
+    <div class="card">
+      <h2>Монитор активных ошибок</h2>
+      <div class="row">
+        <div><label>Блок</label><select id="monSelect"></select></div>
+        <div style="align-self:flex-end">
+          <button id="btnMonStart">Запустить</button>
+          <button class="ghost" id="btnMonStop">Остановить</button>
+        </div>
+      </div>
+      <div class="hint">
+        <b>Поиск неисправного датчика отключением.</b>
+        <ol>
+          <li>Зажигание включено, двигатель заглушен, <b>задняя передача включена</b> —
+              без неё блок датчики не опрашивает</li>
+          <li>Отключить все датчики бампера, запустить монитор, запомнить число</li>
+          <li>Подключать по одному, после каждого ждать 10–15 секунд</li>
+          <li>Счётчик уменьшился — канал исправен. Не сдвинулся — вот дефект</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="stat"><span>Активных ошибок</span>
+          <div class="big" id="monActive">—</div></div>
+        <div class="stat"><span>Всего в памяти</span>
+          <div class="big" id="monTotal">—</div></div>
+        <div class="stat"><span>Первый активный код</span>
+          <div class="mono" id="monCode" style="font-size:18px;margin-top:8px">—</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>История опросов</h2>
+      <table>
+        <thead><tr><th>Время</th><th>Активных</th><th>Всего</th><th>Код</th><th>Событие</th></tr></thead>
+        <tbody id="monBody"><tr><td colspan="5" class="muted">Монитор не запускался</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- МАСТЕР ПОИСКА -->
+  <section id="tab-wiz" class="hidden">
+    <div class="card">
+      <h2>Мастер поиска неисправного датчика</h2>
+      <div class="row">
+        <div><label>Блок</label><select id="wizSelect"></select></div>
+        <div style="flex:1;min-width:220px"><label>Что сделали на этом шаге</label>
+          <input id="wizLabel" placeholder="например: отключён передний левый"
+                 style="width:100%"></div>
+        <div style="align-self:flex-end">
+          <button id="btnWizSample">Снять показание</button>
+          <button class="ghost" id="btnWizReset">Начать заново</button>
+        </div>
+      </div>
+      <div class="hint">
+        <b>Как построить карту «датчик — код».</b>
+        <ol>
+          <li>Зажигание включено, двигатель заглушен, задняя передача включена</li>
+          <li>Все датчики подключены. Подписать шаг «исходное» и снять показание</li>
+          <li>Отключить один датчик, подождать 15 секунд, подписать его название
+              и снять показание</li>
+          <li>Подключить обратно, перейти к следующему</li>
+        </ol>
+        В столбце «Код» будет виден номер ошибки, появившейся при отключении
+        именно этого датчика. После обхода всех датчиков получится готовая
+        карта соответствия — и станет понятно, какому датчику принадлежат
+        коды, висящие в памяти постоянно.
+      </div>
+    </div>
+    <div class="card">
+      <h2>Протокол замеров <span class="mono muted" id="wizModule"></span></h2>
+      <table>
+        <thead><tr><th>Шаг</th><th>Время</th><th>Активных</th><th>Изменение</th><th>Код</th></tr></thead>
+        <tbody id="wizBody"><tr><td colspan="5" class="muted">Замеров пока нет</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- СРАВНЕНИЕ -->
+  <section id="tab-hist" class="hidden">
+    <div class="card">
+      <h2>Снимки состояния</h2>
+      <div class="row">
+        <div style="flex:1;min-width:220px"><label>Название снимка</label>
+          <input id="snapTitle" placeholder="например: до ремонта" style="width:100%"></div>
+        <div style="align-self:flex-end"><button id="btnSnap">Сохранить снимок</button></div>
+      </div>
+      <div class="hint">
+        Снимок запоминает, какие ошибки и в каком количестве были в этот момент.
+        Сделайте снимок до ремонта и после — программа покажет, что ушло,
+        что осталось и что появилось. Это главный вопрос при ремонте,
+        и по памяти на него не ответить.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Сравнить два снимка</h2>
+      <div class="row">
+        <div><label>Было</label><select id="snapA" style="min-width:220px"></select></div>
+        <div><label>Стало</label><select id="snapB" style="min-width:220px"></select></div>
+        <div style="align-self:flex-end"><button id="btnCompare">Сравнить</button></div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="cmpCard">
+      <h2>Результат сравнения</h2>
+      <div class="grid">
+        <div class="stat"><span>Ушло</span><div class="big ok" id="cmpGone">—</div></div>
+        <div class="stat"><span>Осталось</span><div class="big warn" id="cmpStay">—</div></div>
+        <div class="stat"><span>Появилось</span><div class="big bad" id="cmpNew">—</div></div>
+      </div>
+      <table style="margin-top:16px">
+        <thead><tr><th>Код</th><th>Что с ним</th><th>Описание</th></tr></thead>
+        <tbody id="cmpCodes"></tbody>
+      </table>
+      <table style="margin-top:16px">
+        <thead><tr><th>Блок</th><th>Было</th><th>Стало</th><th>Итог</th></tr></thead>
+        <tbody id="cmpMods"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- АККУМУЛЯТОР -->
+  <section id="tab-batt" class="hidden">
+    <div class="card">
+      <h2>Проверка аккумулятора и генератора</h2>
+      <div class="row">
+        <div><label>Длительность</label>
+          <select id="battSeconds">
+            <option value="20">20 секунд</option>
+            <option value="40">40 секунд</option>
+            <option value="60">60 секунд</option>
+          </select></div>
+        <div style="align-self:flex-end"><button id="btnBatt">Начать замер</button></div>
+      </div>
+      <div class="hint">
+        <b>Порядок.</b> Нажмите «Начать замер» при включённом зажигании
+        и заглушенном двигателе, через пару секунд запустите двигатель
+        и дайте ему поработать до конца замера.
+        <ol>
+          <li>Глубина просадки при пуске говорит о состоянии аккумулятора
+              и цепи стартера</li>
+          <li>Напряжение на работающем двигателе — о генераторе
+              и его регуляторе</li>
+        </ol>
+        Значения пишутся в battery_log.csv с шагом около 0,15 секунды.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="stat"><span>Минимум, просадка при пуске</span>
+          <div class="big" id="battLow">—</div></div>
+        <div class="stat"><span>Максимум, работа генератора</span>
+          <div class="big" id="battHigh">—</div></div>
+      </div>
+      <div id="battChart" style="margin-top:18px"></div>
+      <div id="battVerdict" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <!-- ПОМОЩЬ -->
+  <section id="tab-help" class="hidden">
+    <div class="card">
+      <h2>Порядок работы</h2>
+      <ol>
+        <li>Вставить адаптер в разъём OBD, включить зажигание, двигатель не запускать</li>
+        <li>Подключиться к сети Wi-Fi адаптера, затем нажать «Подключиться»</li>
+        <li>Вкладка «Блоки» → «Быстрый поиск» → «Собрать данные по всем»</li>
+        <li>Кнопка «Ошибки» напротив нужного блока — подробный разбор</li>
+        <li>Кнопка «Стереть» — очистка памяти ошибок этого блока</li>
+        <li>Вкладка «Монитор» — поиск неисправного датчика отключением</li>
+        <li>«Сохранить отчёт» — один файл со всеми данными и полным обменом</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h2>Что означают типы отказа</h2>
+      <table>
+        <tr><td class="mono">обрыв цепи</td><td>прозванивать жилу и разъём</td></tr>
+        <tr><td class="mono">замыкание на массу</td><td>проверять изоляцию проводки</td></tr>
+        <tr><td class="mono">замыкание на плюс</td><td>искать протёртую изоляцию рядом с силовой цепью</td></tr>
+        <tr><td class="mono">нет сообщений от узла</td><td>проверять питание узла</td></tr>
+        <tr><td class="mono">сигнал нестабилен</td><td>плохой контакт, искать шевелением жгута</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Состояния ошибки</h2>
+      <table>
+        <tr><td>активна сейчас</td><td>дефект присутствует, можно искать замерами</td></tr>
+        <tr><td>подтверждена</td><td>дефект зафиксирован блоком как достоверный</td></tr>
+        <tr><td>была ранее</td><td>плавающий дефект, искать шевелением проводки</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Ограничения</h2>
+      <p class="muted">
+        Программа работает по протоколу UDS. Дешёвые адаптеры ELM327 не умеют
+        дочитывать длинные ответы от блоков кузовной электроники, поэтому
+        по каждой выборке виден только первый код. Количество ошибок при этом
+        определяется точно. Для чтения полных списков нужен интерфейс,
+        отдающий сырые кадры CAN.
+      </p>
+    </div>
+  </section>
+</main>
+
+<script>
+let state = {};
+
+// Перевод интерфейса. Хранится здесь же: отдельный файл усложнил бы
+// пакет, а объём словаря невелик.
+const I18N = {
+  en: {
+    "Диагностика VAG": "VAG Diagnostics",
+    "не подключено": "not connected", "подключено": "connected",
+    "Подключение": "Connection", "Блоки": "Modules", "Двигатель": "Engine",
+    "Живые данные": "Live data", "Монитор": "Monitor",
+    "Мастер поиска": "Sensor wizard", "Сравнение": "Compare",
+    "Аккумулятор": "Battery", "Как пользоваться": "How to use",
+    "Адаптер": "Adapter", "Тип адаптера": "Adapter type",
+    "Адрес и порт": "Address and port", "Порт": "Port",
+    "Обновить": "Refresh", "Скорость шины": "Bus speed",
+    "Подключиться": "Connect", "Отключить": "Disconnect",
+    "Перезапустить адаптер": "Restart adapter",
+    "если адаптер перестал отвечать": "if the adapter stopped responding",
+    "Полное сканирование одной кнопкой": "Full scan in one click",
+    "Просканировать автомобиль": "Scan the vehicle",
+    "Журнал работы": "Activity log",
+    "Отчёт текстом": "Text report", "Отчёт страницей": "HTML report",
+    "Поиск блоков": "Module search", "Быстрый поиск": "Quick search",
+    "Полный поиск": "Full search",
+    "Собрать данные по всем": "Collect data from all",
+    "Найденные блоки": "Modules found", "Адрес": "Address",
+    "Ответ с": "Replies from", "Имя": "Name",
+    "Номер запчасти": "Part number", "Ошибок": "Faults",
+    "Первый код": "First code", "Ошибки": "Faults", "Стереть": "Clear",
+    "Разбор ошибок": "Fault breakdown", "Признак": "Status flag",
+    "Количество": "Count",
+    "Диагностика двигателя по стандарту OBD-II": "Engine diagnostics, OBD-II",
+    "Прочитать": "Read",
+    "Стереть коды и погасить лампу": "Clear codes and turn off the light",
+    "Лампа неисправности": "Malfunction light",
+    "Кодов в памяти": "Codes stored",
+    "Коды неисправностей": "Trouble codes", "Категория": "Category",
+    "Коды": "Codes", "Что означает": "Meaning",
+    "Готовность систем самодиагностики": "Readiness monitors",
+    "Система": "System", "Состояние": "State",
+    "Живые параметры двигателя": "Live engine parameters",
+    "Запустить опрос": "Start polling", "Остановить": "Stop",
+    "Монитор активных ошибок": "Active fault monitor",
+    "Блок": "Module", "Запустить": "Start",
+    "Активных ошибок": "Active faults", "Всего в памяти": "Stored in total",
+    "Первый активный код": "First active code",
+    "История опросов": "Poll history", "Время": "Time",
+    "Активных": "Active", "Всего": "Total", "Код": "Code",
+    "Событие": "Event",
+    "Мастер поиска неисправного датчика": "Faulty sensor wizard",
+    "Что сделали на этом шаге": "What you did at this step",
+    "Снять показание": "Take a reading", "Начать заново": "Start over",
+    "Протокол замеров": "Measurement log", "Шаг": "Step",
+    "Изменение": "Change", "Снимки состояния": "State snapshots",
+    "Название снимка": "Snapshot name", "Сохранить снимок": "Save snapshot",
+    "Сравнить два снимка": "Compare two snapshots", "Было": "Before",
+    "Стало": "After", "Сравнить": "Compare",
+    "Результат сравнения": "Comparison result", "Ушло": "Gone",
+    "Осталось": "Remained", "Появилось": "Appeared",
+    "Что с ним": "Status", "Описание": "Description", "Итог": "Verdict",
+    "Проверка аккумулятора и генератора": "Battery and alternator test",
+    "Длительность": "Duration", "Начать замер": "Start measuring",
+    "Минимум, просадка при пуске": "Minimum, drop while cranking",
+    "Максимум, работа генератора": "Maximum, alternator output",
+    "Порядок работы": "Workflow",
+    "Что означают типы отказа": "What failure types mean",
+    "Состояния ошибки": "Fault states", "Ограничения": "Limitations",
+  }
+};
+
+function applyLanguage(){
+  const lang = document.getElementById("lang").value;
+  localStorage.setItem("lang", lang);
+  const dict = I18N[lang];
+  document.querySelectorAll("[data-i18n-done]").forEach(node => {
+    if(node.dataset.original) node.textContent = node.dataset.original;
+  });
+  if(!dict) return;
+  const walk = node => {
+    for(const child of node.childNodes){
+      if(child.nodeType === 3){
+        const text = child.nodeValue.trim();
+        if(text && dict[text]) child.nodeValue = child.nodeValue.replace(text, dict[text]);
+      } else if(child.nodeType === 1 && child.tagName !== "SCRIPT"){
+        walk(child);
+      }
+    }
+  };
+  walk(document.body);
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const saved = localStorage.getItem("lang");
+  if(saved){ document.getElementById("lang").value = saved; }
+});
+
+function api(path, body){
+  return fetch(path, {method:"POST", headers:{"Content-Type":"application/json"},
+                      body: JSON.stringify(body || {})}).then(r => r.json());
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    ["conn","mods","obd","live","mon","wiz","hist","batt","help"].forEach(name => {
+      document.getElementById("tab-" + name)
+        .classList.toggle("hidden", name !== tab.dataset.tab);
+    });
+  };
+});
+
+document.getElementById("btnConnect").onclick = () =>
+  api("/api/connect", {host: host.value.trim(), port: port.value.trim(),
+                       kind: kind.value, com: com.value,
+                       bitrate: parseInt(bitrate.value)});
+
+// Переключение полей под выбранный тип адаптера
+function syncKind(){
+  const k = document.getElementById("kind").value;
+  document.getElementById("wifiFields").classList.toggle("hidden", k !== "wifi");
+  document.getElementById("comFields").classList.toggle("hidden", k === "wifi");
+  document.getElementById("rateFields").classList.toggle("hidden", k !== "slcan");
+  document.getElementById("hintWifi").classList.toggle("hidden", k !== "wifi");
+  document.getElementById("hintCom").classList.toggle("hidden", k !== "serial");
+  document.getElementById("hintSlcan").classList.toggle("hidden", k !== "slcan");
+  if(k !== "wifi") api("/api/ports");
+}
+document.getElementById("kind").onchange = syncKind;
+document.getElementById("lang").onchange = () => location.reload();
+document.getElementById("btnPorts").onclick = () => api("/api/ports");
+
+document.getElementById("btnSnap").onclick = () => {
+  api("/api/snapshot/save", {title: document.getElementById("snapTitle").value});
+  document.getElementById("snapTitle").value = "";
+};
+document.getElementById("btnCompare").onclick = () =>
+  api("/api/snapshot/compare", {first: snapA.value, second: snapB.value});
+document.getElementById("btnBatt").onclick = () =>
+  api("/api/battery", {seconds: parseInt(battSeconds.value)});
+document.getElementById("btnDisconnect").onclick = () => api("/api/disconnect");
+document.getElementById("btnScanFast").onclick = () => api("/api/scan", {full:false});
+document.getElementById("btnScanFull").onclick = () => api("/api/scan", {full:true});
+document.getElementById("btnBrief").onclick = () => api("/api/brief");
+document.getElementById("btnReport").onclick = () => api("/api/report");
+document.getElementById("btnMonStart").onclick = () =>
+  api("/api/monitor/start", {id: parseInt(monSelect.value)});
+document.getElementById("btnMonStop").onclick = () => api("/api/monitor/stop");
+document.getElementById("btnReportHtml").onclick = () => api("/api/report/html");
+document.getElementById("btnAdapterReset").onclick = () => api("/api/adapter/reset");
+document.getElementById("btnAuto").onclick = () => {
+  if(confirm("Полное сканирование займёт несколько минут.\n\nЗажигание должно быть включено, двигатель заглушен.\nНачать?")) api("/api/autoscan");
+};
+document.getElementById("btnObdRead").onclick = () => api("/api/obd/read");
+document.getElementById("btnObdClear").onclick = () => {
+  if(confirm("Стереть коды двигателя и погасить лампу?\n\nВместе с кодами сбросится готовность систем самодиагностики.\nДля техосмотра потребуется несколько десятков километров пробега."))
+    api("/api/obd/clear");
+};
+document.getElementById("btnLiveStart").onclick = () => api("/api/live/start", {pids: []});
+document.getElementById("btnLiveStop").onclick = () => api("/api/live/stop");
+document.getElementById("btnWizSample").onclick = () => {
+  api("/api/wizard/sample", {id: parseInt(wizSelect.value),
+                             label: document.getElementById("wizLabel").value});
+  document.getElementById("wizLabel").value = "";
+};
+document.getElementById("btnWizReset").onclick = () => {
+  if(confirm("Очистить протокол замеров?")) api("/api/wizard/reset");
+};
+
+// Звуковой сигнал при изменении счётчика ошибок в мониторе
+let lastActive = null;
+function chirp(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.frequency.value = 880; osc.connect(gain); gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start(); osc.stop(ctx.currentTime + 0.35);
+  }catch(e){}
+}
+
+function renderObd(){
+  const o = state.obd || {};
+  document.getElementById("obdVin").textContent = o.vin || "—";
+  const readiness = o.readiness;
+  document.getElementById("obdMil").innerHTML = readiness
+    ? (readiness.mil ? '<span class="bad">горит</span>' : '<span class="ok">погашена</span>')
+    : "—";
+  const total = (o.stored||[]).length + (o.pending||[]).length + (o.permanent||[]).length;
+  document.getElementById("obdCount").textContent = o.stored ? total : "—";
+
+  const explain = {
+    stored: "подтверждённые, зажигают лампу неисправности",
+    pending: "замечены один раз, ждут подтверждения",
+    permanent: "не стираются, пока причина не устранена"
+  };
+  const titles = {stored:"Сохранённые", pending:"Неподтверждённые", permanent:"Постоянные"};
+  const body = document.getElementById("obdCodes");
+  if(!o.stored){
+    body.innerHTML = '<tr><td colspan="3" class="muted">Не читалось</td></tr>';
+  } else {
+    body.innerHTML = ["stored","pending","permanent"].map(k => `
+      <tr><td>${titles[k]}</td>
+          <td class="mono ${(o[k]||[]).length ? 'bad' : 'ok'}">
+            ${(o[k]||[]).length ? o[k].join(", ") : "нет"}</td>
+          <td class="muted">${explain[k]}</td></tr>`).join("");
+  }
+
+  const ready = document.getElementById("obdReady");
+  if(!readiness){
+    ready.innerHTML = '<tr><td colspan="2" class="muted">Не читалось</td></tr>';
+  } else {
+    ready.innerHTML = readiness.checks.map(c => {
+      const cls = c.state === "готово" ? "ok" : (c.state === "не завершено" ? "warn" : "muted");
+      return `<tr><td>${c.title}</td><td class="${cls}">${c.state}</td></tr>`;
+    }).join("");
+  }
+
+  const freezeCard = document.getElementById("freezeCard");
+  const freeze = o.freeze || [];
+  freezeCard.classList.toggle("hidden", !freeze.length);
+  if(freeze.length){
+    document.getElementById("obdFreeze").innerHTML = freeze.map(f =>
+      `<tr><td>${f.title}</td><td class="mono">${f.value} ${f.unit}</td></tr>`).join("");
+  }
+}
+
+function renderLive(){
+  const live = state.live || {};
+  const grid = document.getElementById("liveGrid");
+  const samples = live.samples || [];
+  const last = samples[samples.length - 1];
+  if(!live.pids || !live.pids.length || !last){
+    grid.innerHTML = '<div class="stat"><span>Опрос не запущен</span><div class="big">—</div></div>';
+    return;
+  }
+  grid.innerHTML = live.pids.map(p => {
+    const value = last.values[String(p.pid)];
+    return `<div class="stat"><span>${p.title}</span>
+      <div class="big" style="font-size:30px">${value === null || value === undefined ? "—" : value}
+      <span style="font-size:14px;color:var(--dim)">${p.unit}</span></div></div>`;
+  }).join("");
+}
+
+function renderPorts(){
+  const select = document.getElementById("com");
+  const options = (state.ports || []).map(p => `<option value="${p}">${p}</option>`).join("");
+  if(options && select.innerHTML !== options){
+    const chosen = select.value;
+    select.innerHTML = options;
+    if(chosen) select.value = chosen;
+  }
+}
+
+function renderSnapshots(){
+  const list = state.snapshots || [];
+  ["snapA","snapB"].forEach(id => {
+    const select = document.getElementById(id);
+    const options = list.map(s => `<option value="${s.file}">${s.title} — ${s.time}</option>`).join("");
+    if(select.innerHTML !== options){
+      const chosen = select.value;
+      select.innerHTML = options;
+      if(chosen) select.value = chosen;
+      else if(id === "snapA" && list.length > 1) select.value = list[1].file;
+    }
+  });
+
+  const cmp = state.comparison || {};
+  const card = document.getElementById("cmpCard");
+  if(!cmp.modules){ card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  document.getElementById("cmpGone").textContent = cmp.gone.length;
+  document.getElementById("cmpStay").textContent = cmp.stayed.length;
+  document.getElementById("cmpNew").textContent = cmp.fresh.length;
+
+  const rows = [];
+  cmp.gone.forEach(c => rows.push([c, "ушёл", "ok"]));
+  cmp.stayed.forEach(c => rows.push([c, "остался", "warn"]));
+  cmp.fresh.forEach(c => rows.push([c, "появился", "bad"]));
+  document.getElementById("cmpCodes").innerHTML = rows.length
+    ? rows.map(([c, verdict, cls]) =>
+        `<tr><td class="mono">${c.code}</td><td class="${cls}">${verdict}</td>
+             <td class="muted">${c.text || ""}</td></tr>`).join("")
+    : '<tr><td colspan="3" class="muted">Коды двигателя не менялись</td></tr>';
+
+  document.getElementById("cmpMods").innerHTML = (cmp.modules || []).map(m => `
+    <tr><td class="mono">${m.hex} <span class="muted">${m.name || ""}</span></td>
+        <td>${m.before === null ? "—" : m.before}</td>
+        <td>${m.after === null ? "—" : m.after}</td>
+        <td class="${m.verdict.includes("меньше") ? "ok" :
+                     (m.verdict.includes("больше") ? "bad" : "muted")}">${m.verdict}</td></tr>`).join("");
+}
+
+function renderBattery(){
+  const b = state.battery || {};
+  const samples = b.samples || [];
+  document.getElementById("battLow").innerHTML = b.low !== undefined
+    ? `${b.low} <span style="font-size:16px;color:var(--dim)">В</span>` : "—";
+  document.getElementById("battHigh").innerHTML = b.high !== undefined
+    ? `${b.high} <span style="font-size:16px;color:var(--dim)">В</span>` : "—";
+
+  // График рисуем сами: внешние библиотеки в пакет не тянем
+  const chart = document.getElementById("battChart");
+  if(!samples.length){ chart.innerHTML = '<span class="muted">Замер не проводился</span>'; }
+  else {
+    const values = samples.map(s => s.v);
+    const min = Math.min(...values), max = Math.max(...values);
+    const span = (max - min) || 1;
+    const width = 100 / samples.length;
+    chart.innerHTML =
+      '<div style="display:flex;align-items:flex-end;height:130px;gap:1px;' +
+      'background:var(--panel2);border-radius:8px;padding:8px">' +
+      samples.map(s => {
+        const height = 8 + (s.v - min) / span * 92;
+        const color = s.v < 10.5 ? "var(--bad)" :
+                      (s.v > 13.2 ? "var(--accent)" : "var(--accent2)");
+        return `<div title="${s.t} с: ${s.v} В" style="flex:1;height:${height}%;
+                background:${color};border-radius:2px 2px 0 0"></div>`;
+      }).join("") + "</div>" +
+      `<div class="row" style="justify-content:space-between;margin-top:6px">
+         <span class="muted">${min} В</span>
+         <span class="muted">длительность ${samples[samples.length-1].t} с</span>
+         <span class="muted">${max} В</span></div>`;
+  }
+
+  const verdict = document.getElementById("battVerdict");
+  verdict.innerHTML = (b.verdict || []).map(v =>
+    `<div class="hint">${v}</div>`).join("");
+}
+
+function renderWizard(){
+  const wiz = state.wizard || {};
+  const select = document.getElementById("wizSelect");
+  const chosen = select.value;
+  const options = (state.modules || []).map(m =>
+    `<option value="${m.id}">${m.hex} ${m.name || ""}</option>`).join("");
+  if(select.innerHTML !== options){
+    select.innerHTML = options;
+    if(chosen) select.value = chosen;
+  }
+  document.getElementById("wizModule").textContent = wiz.module || "";
+  const body = document.getElementById("wizBody");
+  const rows = wiz.rows || [];
+  if(!rows.length){
+    body.innerHTML = '<tr><td colspan="5" class="muted">Замеров пока нет</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => `
+    <tr><td>${r.label}</td><td class="mono muted">${r.time}</td>
+        <td class="${r.active ? 'bad' : 'ok'}">${r.active === null ? "—" : r.active}</td>
+        <td class="warn mono">${r.delta || ""}</td>
+        <td class="mono">${r.code || "—"}</td></tr>`).join("");
+}
+
+function renderModules(){
+  const body = document.getElementById("modsBody");
+  if(!state.modules || !state.modules.length){
+    body.innerHTML = '<tr><td colspan="7" class="muted">Блоки не найдены. Запустите поиск.</td></tr>';
+    return;
+  }
+  body.innerHTML = state.modules.map(m => `
+    <tr>
+      <td class="mono">${m.hex}</td>
+      <td class="mono muted">${m.rx || "—"}</td>
+      <td>${m.name || '<span class="muted">—</span>'}</td>
+      <td class="mono muted">${m.part || "—"}</td>
+      <td class="${m.faults ? 'bad' : (m.faults === 0 ? 'ok' : 'muted')}">
+        ${m.faults === null || m.faults === undefined ? "—" : m.faults}</td>
+      <td class="mono">${m.firstCode || '<span class="muted">—</span>'}</td>
+      <td>
+        <button class="ghost" onclick="api('/api/detail',{id:${m.id}})">Ошибки</button>
+        <button class="danger" onclick="askClear(${m.id},'${m.hex}')">Стереть</button>
+      </td>
+    </tr>`).join("");
+}
+
+function askClear(id, hex){
+  if(confirm("Стереть память ошибок блока " + hex + "?\n\n" +
+             "Старые записи будут потеряны. Действующие неисправности\n" +
+             "появятся снова после поездки задним ходом.")){
+    api("/api/clear", {id: id});
+  }
+}
+
+function renderDetails(){
+  const keys = Object.keys(state.details || {});
+  const card = document.getElementById("detailCard");
+  if(!keys.length){ card.classList.add("hidden"); return; }
+  const key = keys[keys.length - 1];
+  card.classList.remove("hidden");
+  document.getElementById("detailId").textContent = key;
+  document.getElementById("detailBody").innerHTML =
+    state.details[key].rows.map(r => `
+      <tr><td>${r.title}</td>
+          <td class="${r.count ? 'bad' : 'ok'}">${r.count === null ? "—" : r.count}</td>
+          <td class="mono">${r.code ? r.code + " " + r.failure : '<span class="muted">—</span>'}</td>
+      </tr>`).join("");
+}
+
+function renderMonitor(){
+  const select = document.getElementById("monSelect");
+  const chosen = select.value;
+  const options = (state.modules || []).map(m =>
+    `<option value="${m.id}">${m.hex} ${m.name || ""}</option>`).join("");
+  if(select.innerHTML !== options){
+    select.innerHTML = options;
+    if(chosen) select.value = chosen;
+  }
+  const samples = state.monitor || [];
+  const last = samples[samples.length - 1];
+  document.getElementById("monActive").textContent = last && last.active !== null ? last.active : "—";
+  document.getElementById("monTotal").textContent = last && last.total !== null ? last.total : "—";
+  document.getElementById("monCode").textContent = last && last.code ? last.code : "—";
+  const body = document.getElementById("monBody");
+  if(!samples.length){
+    body.innerHTML = '<tr><td colspan="5" class="muted">Монитор не запускался</td></tr>';
+    return;
+  }
+  body.innerHTML = samples.slice().reverse().slice(0, 25).map(s => `
+    <tr><td class="mono">${s.time}</td>
+        <td class="${s.active ? 'bad' : 'ok'}">${s.active === null ? "—" : s.active}</td>
+        <td class="muted">${s.total === null ? "—" : s.total}</td>
+        <td class="mono">${s.code || "—"}</td>
+        <td class="warn">${s.event || ""}</td></tr>`).join("");
+}
+
+async function tick(){
+  try{
+    state = await (await fetch("/api/state")).json();
+  }catch(e){ return; }
+
+  document.getElementById("ver").textContent = "версия " + state.version;
+  document.getElementById("dot").classList.toggle("on", state.connected);
+  document.getElementById("connText").textContent =
+    state.connected ? "подключено" : "не подключено";
+  const a = state.adapter || {};
+  document.getElementById("adapterInfo").textContent =
+    a.version ? a.version + " · " + a.voltage : "";
+  document.getElementById("taskInfo").textContent =
+    state.busy ? state.task + "… " + state.progress + "%" : (state.message || "");
+  document.getElementById("bar1").style.width = state.busy ? state.progress + "%" : "0%";
+  document.getElementById("bar2").style.width = state.busy ? state.progress + "%" : "0%";
+
+  const warn = a.warn ? '<div class="warn">⚠ ' + a.warn + "</div>" : "";
+  document.getElementById("log").innerHTML =
+    warn + (state.log || []).join("<br>");
+  const log = document.getElementById("log");
+  log.scrollTop = log.scrollHeight;
+
+  document.querySelectorAll("button").forEach(b => {
+    if(["btnMonStop","btnDisconnect","btnLiveStop","btnPorts"].includes(b.id)) return;
+    b.disabled = state.busy && !state.monitorRunning;
+  });
+
+  renderModules(); renderDetails(); renderMonitor();
+  renderObd(); renderLive(); renderWizard();
+  renderPorts(); renderSnapshots(); renderBattery();
+
+  const samples = state.monitor || [];
+  const last = samples[samples.length - 1];
+  if(last && last.active !== null){
+    if(lastActive !== null && last.active !== lastActive) chirp();
+    lastActive = last.active;
+  }
+}
+setInterval(tick, 800); tick(); syncKind();
+if(localStorage.getItem("lang") === "en"){
+  document.getElementById("lang").value = "en";
+  applyLanguage();
+}
+</script>
+</body>
+</html>
