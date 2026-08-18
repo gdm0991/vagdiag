@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.csv
+*.log
+REPORT_TO_SEND.txt
+pdc_config.json
+python/
+dist/
+build/
+*.spec
