@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Микросхемы, которые встречаются внутри USB-адаптеров ELM327.
+  Android по этому списку понимает, что подключённое устройство
+  относится к нашему приложению, и предлагает открыть его.
+-->
+<resources>
+    <usb-device vendor-id="1027" />   <!-- 0x0403  FTDI FT232 -->
+    <usb-device vendor-id="1659" />   <!-- 0x067B  Prolific PL2303 -->
+    <usb-device vendor-id="4292" />   <!-- 0x10C4  Silicon Labs CP210x -->
+    <usb-device vendor-id="6790" />   <!-- 0x1A86  QinHeng CH340, CH341 -->
+    <usb-device vendor-id="1155" />   <!-- 0x0483  STMicroelectronics -->
+    <usb-device vendor-id="9025" />   <!-- 0x2341  платы на ATmega -->
+</resources>
