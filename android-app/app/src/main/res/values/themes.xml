@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VagDiag" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#0F1216</item>
+        <item name="android:navigationBarColor">#0F1216</item>
+    </style>
+</resources>
